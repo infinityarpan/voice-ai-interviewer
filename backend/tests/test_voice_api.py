@@ -83,19 +83,6 @@ def test_voice_answer_rejects_blank_transcript():
     assert response.status_code == 422
 
 
-def test_voice_client_log_endpoint_accepts_compact_status():
-    client = TestClient(app)
-    session_id = _start_session(client)
-
-    response = client.post(
-        f"/interviews/{session_id}/voice/client-log",
-        json={"status": {"voice": "connected"}, "at": "2026-05-10T00:00:00Z"},
-    )
-
-    assert response.status_code == 200
-    assert response.json() == {"logged": True}
-
-
 def test_voice_test_page_loads_with_expected_controls():
     client = TestClient(app)
 

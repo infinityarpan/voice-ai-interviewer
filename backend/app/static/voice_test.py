@@ -308,31 +308,7 @@ VOICE_TEST_HTML = r"""<!doctype html>
       $("uiState").textContent = typeof value === "string"
         ? value
         : value.ui || value.voice || value.auto || value.recording || value.transcription || value.connected || value.interview || "Updated";
-      logStatusToBackend(value);
     };
-
-    function compactStatus(value) {
-      if (typeof value === "string") return { message: value };
-      const compact = {};
-      for (const key of ["ui", "voice", "auto", "recording", "transcription", "connected", "interview", "audio", "note", "duration_seconds"]) {
-        if (value && value[key] !== undefined) compact[key] = value[key];
-      }
-      if (value && value.error) compact.error = value.error.message || value.error;
-      if (value && value.detail) compact.detail = value.detail;
-      if (value && value.transcript) compact.transcript_preview = String(value.transcript).slice(0, 160);
-      return compact;
-    }
-
-    function logStatusToBackend(value) {
-      const sessionId = $("sessionId").value.trim();
-      if (!sessionId) return;
-      fetch(`/interviews/${sessionId}/voice/client-log`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        keepalive: true,
-        body: JSON.stringify({ status: compactStatus(value), at: new Date().toISOString() })
-      }).catch(() => {});
-    }
 
     function updateControls() {
       $("startInterview").disabled = voiceConnecting || interviewActive;

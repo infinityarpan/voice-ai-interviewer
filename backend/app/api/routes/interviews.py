@@ -1,6 +1,3 @@
-import logging
-from typing import Any
-
 from fastapi import APIRouter, HTTPException
 
 from app.schemas.interview import (
@@ -8,17 +5,15 @@ from app.schemas.interview import (
     InterviewAnswerResponse,
     InterviewEndResponse,
     InterviewReport,
-    InterviewSessionState,
     InterviewStartRequest,
     InterviewStartResponse,
 )
 from app.schemas.voice import VoiceProviderStatus, VoiceSessionResponse, VoiceTranscriptSubmitRequest, VoiceTurnResponse
-from app.services.interview_engine.orchestrator import InterviewEngine
+from app.services.interview_engine.engine import InterviewEngine
 from app.services.interview_engine.store import create_interview_store
 from app.services.voice.realtime import VoiceProviderError, create_voice_service
 
 router = APIRouter(prefix="/interviews", tags=["interviews"])
-logger = logging.getLogger(__name__)
 
 store = create_interview_store()
 engine = InterviewEngine(store=store)
@@ -91,20 +86,6 @@ def submit_voice_answer(session_id: str, payload: VoiceTranscriptSubmitRequest) 
         raise HTTPException(status_code=404, detail="Interview session not found") from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@router.post("/{session_id}/voice/client-log")
-def log_voice_client_event(session_id: str, payload: dict[str, Any]) -> dict[str, bool]:
-    logger.info("voice_client_event session_id=%s payload=%s", session_id, payload)
-    return {"logged": True}
-
-
-@router.get("/{session_id}/state", response_model=InterviewSessionState)
-def get_state(session_id: str) -> InterviewSessionState:
-    try:
-        return engine.get_state(session_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="Interview session not found") from exc
 
 
 @router.get("/{session_id}/report", response_model=InterviewReport)

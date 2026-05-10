@@ -22,7 +22,6 @@ Open:
 - `POST /interviews/{session_id}/voice/realtime-token`
 - `POST /interviews/{session_id}/voice/answer`
 - `POST /interviews/{session_id}/end`
-- `GET /interviews/{session_id}/state`
 - `GET /interviews/{session_id}/report`
 - `GET /voice-test`
 
@@ -67,24 +66,26 @@ Open the minimal test page after starting Uvicorn:
 http://localhost:8000/voice-test
 ```
 
-Mock voice mode is the default. It uses browser speech synthesis and manual transcript text, so it works without OpenAI credentials.
+Mock voice mode is the default for tests. Real hands-free voice interviews require `VOICE_PROVIDER=openai_realtime`.
 
 ## Configuration
 
-Defaults are local-demo friendly:
+Recommended deployable MVP configuration:
+
+```powershell
+$env:AI_PROVIDER="openai"
+$env:VOICE_PROVIDER="openai_realtime"
+$env:INTERVIEW_STORE="sqlite"
+$env:INTERVIEW_DB_PATH="interview_sessions.sqlite3"
+$env:OPENAI_API_KEY="sk-..."
+```
+
+Local mock configuration:
 
 ```powershell
 $env:AI_PROVIDER="mock"
 $env:VOICE_PROVIDER="mock"
 $env:INTERVIEW_STORE="memory"
-```
-
-Optional SQLite persistence:
-
-```powershell
-$env:INTERVIEW_STORE="sqlite"
-$env:INTERVIEW_DB_PATH="interview_sessions.sqlite3"
-uvicorn app.main:app --reload
 ```
 
 Optional OpenAI provider:
