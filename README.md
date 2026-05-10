@@ -15,6 +15,14 @@ Open:
 - API docs: http://localhost:8000/docs
 - Health: http://localhost:8000/health
 
+## Docker
+
+```powershell
+docker compose up --build
+```
+
+The compose setup reads `.env`, serves the API on `http://localhost:8000`, and persists SQLite data under `./docker-data`.
+
 ## Core Endpoints
 
 - `POST /interviews/start`

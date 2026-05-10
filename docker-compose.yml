@@ -1,0 +1,13 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      INTERVIEW_STORE: sqlite
+      INTERVIEW_DB_PATH: /data/interview_sessions.sqlite3
+    volumes:
+      - ./docker-data:/data
+    restart: unless-stopped
