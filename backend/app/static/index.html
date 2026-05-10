@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI Interviewer Voice Test</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <h1>AI Interviewer Voice Test</h1>
+  <div class="panel provider-panel">
+    <h2>Voice diagnostics</h2>
+    <p id="providerStatus">Checking provider...</p>
+    <div class="voice-side">
+      <div id="uiState" class="compact-status">Idle</div>
+      <label>Microphone</label>
+      <select id="micDevice"></select>
+      <p id="micLevel">Mic level: idle</p>
+      <p id="voiceHint">Voice provider not connected yet.</p>
+    </div>
+  </div>
+  <div class="panel setup-panel">
+    <label>Session ID</label>
+    <input id="sessionId" placeholder="Start a session or paste an existing session id" />
+    <label>Job description</label>
+    <textarea id="jobDescription">Backend engineer role using Python APIs.</textarea>
+    <label>Candidate profile</label>
+    <textarea id="candidateProfile">Candidate has backend API experience.</textarea>
+    <label>Required skills, comma separated</label>
+    <input id="requiredSkills" value="python, apis" />
+    <div class="control-row">
+      <button id="startInterview">Start interview</button>
+      <button id="endInterview">End interview</button>
+    </div>
+  </div>
+
+  <div class="panel interview-panel">
+    <div class="question-block">
+      <h2>Current question</h2>
+      <p id="questionText">No question yet.</p>
+    </div>
+    <audio id="remoteAudio" autoplay></audio>
+    <div class="transcript-block">
+      <label>Latest transcript</label>
+      <textarea id="transcript" readonly placeholder="Hands-free transcripts will appear here automatically."></textarea>
+    </div>
+  </div>
+
+  <script src="/static/voice.js"></script>
+</body>
+</html>

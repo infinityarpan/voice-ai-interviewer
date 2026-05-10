@@ -91,6 +91,8 @@ def test_voice_test_page_loads_with_expected_controls():
     assert response.status_code == 200
     assert "Start interview" in response.text
     assert "End interview" in response.text
+    assert 'href="/static/styles.css"' in response.text
+    assert 'src="/static/voice.js"' in response.text
     assert "Connect voice" not in response.text
     assert "Disconnect voice" not in response.text
     assert 'id="uiState"' in response.text
@@ -100,25 +102,36 @@ def test_voice_test_page_loads_with_expected_controls():
     assert "Microphone" in response.text
     assert "Mic level" in response.text
     assert "Latest transcript" in response.text
-    assert "Hands-free mode" in response.text
-    assert "AUTO_SILENCE_MS" in response.text
-    assert "scheduleAutoSubmit" in response.text
-    assert "selectedAudioConstraints" in response.text
     assert "Start answer" not in response.text
     assert "Stop answer" not in response.text
     assert "Submit answer" not in response.text
     assert "Speak current question" not in response.text
     assert "autoHandsFree" not in response.text
-    assert "RTCPeerConnection" in response.text
-    assert "input_audio_buffer.commit" in response.text
-    assert "output_modalities" in response.text
-    assert "response.modalities" not in response.text
-    assert "MIN_RECORDING_MS" in response.text
-    assert "transcriptRejected" in response.text
-    assert "Verbatim English transcription only" in response.text
-    assert "transcriptLooksHallucinatedForDuration" in response.text
-    assert "conversation.item.input_audio_transcription.completed" in response.text
-    assert "conversation.item.input_audio_transcription.failed" in response.text
+
+
+def test_voice_test_static_assets_load():
+    client = TestClient(app)
+
+    styles = client.get("/static/styles.css")
+    script = client.get("/static/voice.js")
+
+    assert styles.status_code == 200
+    assert "grid-template-columns" in styles.text
+    assert script.status_code == 200
+    assert "Hands-free mode" in script.text
+    assert "AUTO_SILENCE_MS" in script.text
+    assert "scheduleAutoSubmit" in script.text
+    assert "selectedAudioConstraints" in script.text
+    assert "RTCPeerConnection" in script.text
+    assert "input_audio_buffer.commit" in script.text
+    assert "output_modalities" in script.text
+    assert "response.modalities" not in script.text
+    assert "MIN_RECORDING_MS" in script.text
+    assert "transcriptRejected" in script.text
+    assert "Verbatim English transcription only" in script.text
+    assert "transcriptLooksHallucinatedForDuration" in script.text
+    assert "conversation.item.input_audio_transcription.completed" in script.text
+    assert "conversation.item.input_audio_transcription.failed" in script.text
 
 
 def _start_session(client: TestClient) -> str:
