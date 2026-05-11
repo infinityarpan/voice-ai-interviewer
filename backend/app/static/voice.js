@@ -350,7 +350,6 @@ let pc = null;
       if (event.type === "conversation.item.input_audio_transcription.delta" && event.delta) {
         if (!isRecording && !awaitingTranscript) return;
         $("transcript").value = (($("transcript").value || "") + " " + (event.transcript || event.delta)).trim();
-        sendVoiceStream({ type: "transcript_delta", delta: event.delta, text: $("transcript").value });
       }
       if (event.type === "conversation.item.input_audio_transcription.completed") {
         const transcript = (event.transcript || "").trim();

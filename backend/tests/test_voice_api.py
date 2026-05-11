@@ -87,19 +87,16 @@ def test_voice_answer_rejects_blank_transcript():
     assert response.status_code == 422
 
 
-def test_voice_stream_accepts_deltas_without_evaluating_then_final_advances():
+def test_voice_stream_accepts_latency_marks_then_final_transcript_advances():
     client = TestClient(app)
     session_id = _start_session(client)
 
     with client.websocket_connect(f"/interviews/{session_id}/voice/stream") as websocket:
         assert websocket.receive_json()["type"] == "connected"
 
-        websocket.send_json({"type": "transcript_delta", "text": "I built"})
-        assert websocket.receive_json()["type"] == "transcript_delta_ack"
-        assert engine.get_state(session_id).turns[0].answer_text is None
-
         websocket.send_json({"type": "latency_mark", "name": "test_mark", "at_ms": 12})
         assert websocket.receive_json()["type"] == "latency_mark_ack"
+        assert engine.get_state(session_id).turns[0].answer_text is None
 
         websocket.send_json(
             {
@@ -181,6 +178,7 @@ def test_voice_test_static_assets_load():
     assert "WebSocket" in script.text
     assert "voice/stream" in script.text
     assert "transcript_final" in script.text
+    assert "transcript_delta" not in script.text
     assert "latency_mark" in script.text
     assert "markLatency" in script.text
     assert "AUTO_SILENCE_MS" in script.text

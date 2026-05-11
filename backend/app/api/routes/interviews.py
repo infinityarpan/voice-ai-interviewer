@@ -97,10 +97,6 @@ async def voice_stream(websocket: WebSocket, session_id: str) -> None:
             if message_type == "latency_mark":
                 logger.info("voice latency mark session_id=%s name=%s payload=%s", session_id, message.get("name"), message)
                 await websocket.send_json({"type": "latency_mark_ack", "name": message.get("name")})
-            elif message_type == "transcript_delta":
-                text = str(message.get("text") or message.get("delta") or "").strip()
-                logger.info("voice transcript delta session_id=%s chars=%s", session_id, len(text))
-                await websocket.send_json({"type": "transcript_delta_ack", "chars": len(text)})
             elif message_type == "transcript_final":
                 try:
                     payload = VoiceTranscriptSubmitRequest(
