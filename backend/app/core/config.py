@@ -42,6 +42,7 @@ class Settings(BaseModel):
     voice_provider: Literal["mock", "openai_realtime"] = "mock"
     openai_realtime_model: str = "gpt-realtime"
     openai_realtime_voice: str = "marin"
+    followup_generation_mode: Literal["template", "llm"] = "template"
     interview_store: Literal["memory", "sqlite"] = "memory"
     interview_db_path: str = "interview_sessions.sqlite3"
 
@@ -55,6 +56,7 @@ def get_settings() -> Settings:
         voice_provider=_literal_env("VOICE_PROVIDER", {"mock", "openai_realtime"}, "mock"),
         openai_realtime_model=os.getenv("OPENAI_REALTIME_MODEL", "gpt-realtime"),
         openai_realtime_voice=os.getenv("OPENAI_REALTIME_VOICE", "marin"),
+        followup_generation_mode=_literal_env("FOLLOWUP_GENERATION_MODE", {"template", "llm"}, "template"),
         interview_store=_literal_env("INTERVIEW_STORE", {"memory", "sqlite"}, "memory"),
         interview_db_path=os.getenv("INTERVIEW_DB_PATH", "interview_sessions.sqlite3"),
     )

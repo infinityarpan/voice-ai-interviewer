@@ -1,9 +1,12 @@
 import re
+import logging
+from time import perf_counter
 from datetime import UTC, datetime
 from typing import Literal
 from uuid import uuid4
 
 from app.ai.provider import LLMProvider, get_llm_provider
+from app.core.config import get_settings
 from app.schemas.interview import (
     AnswerEvaluation,
     FollowUpTrigger,
@@ -25,6 +28,8 @@ from app.schemas.interview import (
     SkillScore,
 )
 from app.services.interview_engine.store import InterviewStore
+
+logger = logging.getLogger(__name__)
 
 INITIAL_SHORTLIST_CONTEXT = (
     "This is an initial recruiter shortlist screen for a recruitment firm serving multiple clients. "
@@ -67,6 +72,8 @@ class InterviewEngine:
         return InterviewStartResponse(session_id=session_id, plan=plan, first_question=first_question, state=state)
 
     def answer(self, session_id: str, request: InterviewAnswerRequest) -> InterviewAnswerResponse:
+        turn_started = perf_counter()
+        logger.info("voice latency: transcript received session_id=%s source=%s", session_id, request.answer_source)
         state = self.store.get(session_id)
         if state.status == "completed":
             raise ValueError("Interview is already completed")
@@ -75,7 +82,10 @@ class InterviewEngine:
             raise ValueError("No active question is available")
 
         skill = self._skill_by_id(state, active_turn.skill_id)
+        evaluation_started = perf_counter()
+        logger.info("voice latency: evaluation start session_id=%s", session_id)
         evaluation = self.evaluator.evaluate(active_turn.question, request.answer_text, skill)
+        logger.info("voice latency: evaluation end session_id=%s elapsed_ms=%s", session_id, elapsed_ms(evaluation_started))
         active_turn.answer_text = request.answer_text
         active_turn.answer_source = request.answer_source
         active_turn.transcript_confidence = request.transcript_confidence
@@ -84,6 +94,7 @@ class InterviewEngine:
         state.skill_states[skill.skill_id].turns += 1
 
         decision = self.policy.decide(state, skill.skill_id, evaluation)
+        logger.info("voice latency: policy decision session_id=%s action=%s", session_id, decision.action)
         active_turn.policy_decision = decision
 
         next_question = None
@@ -97,6 +108,7 @@ class InterviewEngine:
             self._complete_state(state, self._completion_reason_for(decision.action))
         self._touch(state)
         self.store.save(state)
+        logger.info("voice latency: save complete session_id=%s total_ms=%s", session_id, elapsed_ms(turn_started))
         return InterviewAnswerResponse(
             session_id=session_id,
             evaluation=evaluation,
@@ -297,6 +309,7 @@ class AnswerEvaluator:
 class FollowUpGenerator:
     def __init__(self, provider: LLMProvider) -> None:
         self.provider = provider
+        self.mode = get_settings().followup_generation_mode
 
     def generate(
         self,
@@ -305,6 +318,9 @@ class FollowUpGenerator:
         evaluation: AnswerEvaluation,
         question_type: Literal["follow_up", "clarification"] = "follow_up",
     ) -> InterviewQuestion:
+        if self.mode == "template":
+            return self._template_question(state, skill, evaluation, question_type)
+
         prompt = "\n".join(
             [
                 "Generate one deeper follow-up question.",
@@ -322,6 +338,33 @@ class FollowUpGenerator:
         )
         question = self.provider.generate_json(prompt, InterviewQuestion)
         return constrain_question_for_two_minutes(question.model_copy(update={"question_type": question_type}))
+
+    def _template_question(
+        self,
+        state: InterviewSessionState,
+        skill: InterviewSkillPlan,
+        evaluation: AnswerEvaluation,
+        question_type: Literal["follow_up", "clarification"],
+    ) -> InterviewQuestion:
+        if question_type == "clarification":
+            text = f"Could you clarify your {skill.skill_name} experience with one concrete example and what you personally did?"
+        elif evaluation.contradiction_detected:
+            text = f"I heard a possible inconsistency in your {skill.skill_name} answer. Could you clarify the tradeoff and your actual approach?"
+        elif evaluation.missing_signals:
+            missing = evaluation.missing_signals[0]
+            text = f"Could you expand on {missing} in your {skill.skill_name} example and explain the decision you made?"
+        elif evaluation.shallow_answer:
+            text = f"Could you make your {skill.skill_name} answer more concrete by walking through one real decision and why you chose it?"
+        else:
+            text = f"Could you add one practical {skill.skill_name} example that shows your reasoning and tradeoffs?"
+        return constrain_question_for_two_minutes(
+            InterviewQuestion(
+                question_id=f"{question_type}-{skill.skill_id}-{len(state.turns) + 1}",
+                skill_id=skill.skill_id,
+                question_text=text,
+                question_type=question_type,
+            )
+        )
 
 
 class InterviewPolicyEngine:
@@ -574,3 +617,7 @@ def unique(values) -> list[str]:
             seen.add(value)
             result.append(value)
     return result
+
+
+def elapsed_ms(start: float) -> int:
+    return round((perf_counter() - start) * 1000)

@@ -29,6 +29,7 @@ The compose setup reads `.env`, serves the API on `http://localhost:8000`, and p
 - `POST /interviews/{session_id}/answer`
 - `POST /interviews/{session_id}/voice/realtime-token`
 - `POST /interviews/{session_id}/voice/answer`
+- `WS /interviews/{session_id}/voice/stream`
 - `POST /interviews/{session_id}/end`
 - `GET /interviews/{session_id}/report`
 - `GET /voice-test`
@@ -76,6 +77,8 @@ http://localhost:8000/voice-test
 
 Mock voice mode is the default for tests. Real hands-free voice interviews require `VOICE_PROVIDER=openai_realtime`.
 
+For lower-latency voice turns, the browser uses `WS /interviews/{session_id}/voice/stream` to send transcript deltas, final transcripts, and simple latency marks. Only final transcripts are evaluated.
+
 ## Configuration
 
 Recommended deployable MVP configuration:
@@ -111,4 +114,12 @@ $env:VOICE_PROVIDER="openai_realtime"
 $env:OPENAI_API_KEY="sk-..."
 $env:OPENAI_REALTIME_MODEL="gpt-realtime"
 $env:OPENAI_REALTIME_VOICE="marin"
+```
+
+Optional follow-up generation mode:
+
+```powershell
+$env:FOLLOWUP_GENERATION_MODE="template"  # fastest default
+# or
+$env:FOLLOWUP_GENERATION_MODE="llm"
 ```

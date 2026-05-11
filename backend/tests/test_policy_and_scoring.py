@@ -1,5 +1,16 @@
-from app.schemas.interview import AnswerEvaluation, InterviewConfig, InterviewSessionState, InterviewTurn, SkillRuntimeState
-from app.services.interview_engine.engine import InterviewPolicyEngine, ScoreAggregator, constrain_question_for_two_minutes
+from app.schemas.interview import (
+    AnswerEvaluation,
+    InterviewAnswerRequest,
+    InterviewConfig,
+    InterviewSessionState,
+    InterviewStartRequest,
+    InterviewTurn,
+    SkillRuntimeState,
+)
+from app.services.interview_engine.engine import InterviewEngine, InterviewPolicyEngine, ScoreAggregator, constrain_question_for_two_minutes
+from app.services.interview_engine.store import InMemoryInterviewStore
+from app.ai.provider import MockLLMProvider
+from app.core.config import get_settings
 from tests.utils import sample_plan
 
 
@@ -63,6 +74,46 @@ def test_question_constraint_keeps_spoken_prompt_short():
 
     assert len(constrained.question_text.split()) <= 50
     assert "Answer in about 2 minutes." in constrained.question_text
+
+
+def test_template_followup_does_not_call_llm_question_generation(monkeypatch):
+    monkeypatch.setenv("FOLLOWUP_GENERATION_MODE", "template")
+    get_settings.cache_clear()
+    provider = NoQuestionGenerationProvider()
+    engine = InterviewEngine(store=InMemoryInterviewStore(), provider=provider)
+
+    session = engine.start(
+        InterviewStartRequest(
+            job_description="Build backend APIs.",
+            candidate_profile="Python API developer.",
+            role_level="Associate",
+            role_title="Backend Engineer",
+            required_skills=["python"],
+        )
+    )
+    response = engine.answer(
+        session.session_id,
+        InterviewAnswerRequest(
+            answer_text="I used Python.",
+            answer_source="voice",
+        ),
+    )
+
+    assert response.policy_decision.action == "ASK_FOLLOWUP"
+    assert response.next_question is not None
+    assert response.next_question.question_type == "follow_up"
+    assert provider.question_generation_calls == 0
+
+
+class NoQuestionGenerationProvider(MockLLMProvider):
+    def __init__(self) -> None:
+        self.question_generation_calls = 0
+
+    def generate_json(self, prompt, response_model):
+        if response_model.__name__ == "InterviewQuestion":
+            self.question_generation_calls += 1
+            raise AssertionError("Template follow-ups should not call LLM question generation")
+        return super().generate_json(prompt, response_model)
 
 
 def _state(skills: list[str]) -> InterviewSessionState:

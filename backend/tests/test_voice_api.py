@@ -1,6 +1,9 @@
+import pytest
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 from app.main import app
+from app.api.routes.interviews import engine
 
 
 def test_voice_realtime_token_returns_mock_session_for_active_interview():
@@ -27,6 +30,7 @@ def test_voice_status_reports_configured_mock_provider():
     payload = response.json()
     assert payload["provider"] == "mock"
     assert payload["available"] is True
+    assert "timing" not in payload
 
 
 def test_voice_realtime_token_rejects_missing_session():
@@ -83,6 +87,61 @@ def test_voice_answer_rejects_blank_transcript():
     assert response.status_code == 422
 
 
+def test_voice_stream_accepts_deltas_without_evaluating_then_final_advances():
+    client = TestClient(app)
+    session_id = _start_session(client)
+
+    with client.websocket_connect(f"/interviews/{session_id}/voice/stream") as websocket:
+        assert websocket.receive_json()["type"] == "connected"
+
+        websocket.send_json({"type": "transcript_delta", "text": "I built"})
+        assert websocket.receive_json()["type"] == "transcript_delta_ack"
+        assert engine.get_state(session_id).turns[0].answer_text is None
+
+        websocket.send_json({"type": "latency_mark", "name": "test_mark", "at_ms": 12})
+        assert websocket.receive_json()["type"] == "latency_mark_ack"
+
+        websocket.send_json(
+            {
+                "type": "transcript_final",
+                "transcript_text": "I built Python APIs because pagination made the service reliable.",
+                "audio_duration_seconds": 8.4,
+            }
+        )
+        result = websocket.receive_json()
+
+    assert result["type"] == "voice_turn_result"
+    payload = result["payload"]
+    assert payload["session_id"] == session_id
+    assert payload["transcript_text"].startswith("I built Python APIs")
+    assert payload["state"]["turns"][0]["answer_source"] == "voice"
+    assert payload["state"]["turns"][0]["audio_duration_seconds"] == 8.4
+    if payload["next_question"]:
+        assert payload["next_question_text"] == payload["next_question"]["question_text"]
+
+
+def test_voice_stream_rejects_missing_session():
+    client = TestClient(app)
+
+    with client.websocket_connect("/interviews/missing/voice/stream") as websocket:
+        assert websocket.receive_json() == {"type": "error", "detail": "Interview session not found"}
+        with pytest.raises(WebSocketDisconnect) as closed:
+            websocket.receive_json()
+        assert closed.value.code == 1008
+
+
+def test_voice_stream_rejects_completed_session():
+    client = TestClient(app)
+    session_id = _start_session(client)
+    client.post(f"/interviews/{session_id}/end")
+
+    with client.websocket_connect(f"/interviews/{session_id}/voice/stream") as websocket:
+        assert websocket.receive_json() == {"type": "error", "detail": "Interview is already completed"}
+        with pytest.raises(WebSocketDisconnect) as closed:
+            websocket.receive_json()
+        assert closed.value.code == 1008
+
+
 def test_voice_test_page_loads_with_expected_controls():
     client = TestClient(app)
 
@@ -119,7 +178,18 @@ def test_voice_test_static_assets_load():
     assert "grid-template-columns" in styles.text
     assert script.status_code == 200
     assert "Hands-free mode" in script.text
+    assert "WebSocket" in script.text
+    assert "voice/stream" in script.text
+    assert "transcript_final" in script.text
+    assert "latency_mark" in script.text
+    assert "markLatency" in script.text
     assert "AUTO_SILENCE_MS" in script.text
+    assert "const AUTO_SILENCE_MS = 1400" in script.text
+    assert "const AUTO_START_AFTER_QUESTION_MS = 250" in script.text
+    assert "const AUTO_SUBMIT_DELAY_MS = 100" in script.text
+    assert "const MIN_RECORDING_MS = 1200" in script.text
+    assert "DEFAULT_VOICE_TIMING" not in script.text
+    assert "applyVoiceTiming" not in script.text
     assert "scheduleAutoSubmit" in script.text
     assert "selectedAudioConstraints" in script.text
     assert "RTCPeerConnection" in script.text

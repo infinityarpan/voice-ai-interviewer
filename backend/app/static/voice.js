@@ -1,5 +1,6 @@
 let pc = null;
     let dc = null;
+    let voiceStream = null;
     let localStream = null;
     let meterStream = null;
     let micTrack = null;
@@ -27,11 +28,11 @@ let pc = null;
     let analyser = null;
     let micLevelTimer = null;
 
-    const MIN_RECORDING_MS = 1500;
+    const MIN_RECORDING_MS = 1200;
     const AUTO_SPEECH_LEVEL = 3;
-    const AUTO_SILENCE_MS = 2000;
-    const AUTO_START_AFTER_QUESTION_MS = 700;
-    const AUTO_SUBMIT_DELAY_MS = 400;
+    const AUTO_SILENCE_MS = 1400;
+    const AUTO_START_AFTER_QUESTION_MS = 250;
+    const AUTO_SUBMIT_DELAY_MS = 100;
     const AUTO_MAX_RECORDING_MS = 120000;
     const TRANSCRIPTION_PROMPT = "Verbatim English transcription only. Write exactly what the candidate says, including short tests like hello. Do not answer the interview question, infer missing words, summarize, rewrite, or add technical content that was not spoken. If the audio is silence or unclear noise, return an empty transcript.";
 
@@ -65,6 +66,49 @@ let pc = null;
         return;
       }
       setStatus(value);
+    }
+
+    function markLatency(name, detail = {}) {
+      const event = {
+        type: "latency_mark",
+        name,
+        at_ms: Math.round(performance.now()),
+        ...detail
+      };
+      console.log("[voice-latency]", event);
+      sendVoiceStream(event);
+    }
+
+    function sendVoiceStream(event) {
+      if (!voiceStream || voiceStream.readyState !== WebSocket.OPEN) return false;
+      voiceStream.send(JSON.stringify(event));
+      return true;
+    }
+
+    function connectVoiceStream(sessionId) {
+      if (voiceStream) voiceStream.close();
+      const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+      voiceStream = new WebSocket(`${protocol}://${window.location.host}/interviews/${sessionId}/voice/stream`);
+      voiceStream.onopen = () => markLatency("voice_stream_open");
+      voiceStream.onmessage = (message) => {
+        try { handleVoiceStreamMessage(JSON.parse(message.data)); } catch (error) { console.warn(error); }
+      };
+      voiceStream.onclose = () => {
+        voiceStream = null;
+        console.log("[voice-stream] closed");
+      };
+      voiceStream.onerror = (error) => console.warn("[voice-stream]", error);
+    }
+
+    function handleVoiceStreamMessage(message) {
+      if (message.type === "voice_turn_result") {
+        markLatency("backend_response_received");
+        autoSubmitting = false;
+        applyVoiceTurnResult(message.payload);
+      } else if (message.type === "error") {
+        autoSubmitting = false;
+        setStatus(message);
+      }
     }
 
     function transcriptLooksInvalid(text) {
@@ -165,6 +209,7 @@ let pc = null;
           startAnswer({ auto: true });
         }
       }, AUTO_START_AFTER_QUESTION_MS);
+      markLatency("listening_scheduled", { delay_ms: AUTO_START_AFTER_QUESTION_MS });
       setVoiceStatus({
         auto: "waiting_to_listen",
         note: "Hands-free mode will start listening after the question audio settles."
@@ -175,10 +220,12 @@ let pc = null;
       const now = Date.now();
       const durationMs = answerStartedAt ? now - answerStartedAt : 0;
       if (percent >= AUTO_SPEECH_LEVEL) {
+        if (!speechDetected) markLatency("first_speech_detected", { mic_level_percent: percent });
         speechDetected = true;
         lastSpeechAt = now;
       }
       if (speechDetected && lastSpeechAt && now - lastSpeechAt >= AUTO_SILENCE_MS && durationMs >= MIN_RECORDING_MS) {
+        markLatency("silence_detected", { duration_ms: durationMs });
         stopAnswer({ auto: true });
         return;
       }
@@ -190,6 +237,7 @@ let pc = null;
     function scheduleAutoSubmit() {
       if (!autoModeEnabled() || autoSubmitting) return;
       autoSubmitting = true;
+      markLatency("auto_submit_scheduled", { delay_ms: AUTO_SUBMIT_DELAY_MS });
       setTimeout(() => submitAnswer({ auto: true }), AUTO_SUBMIT_DELAY_MS);
     }
 
@@ -218,6 +266,7 @@ let pc = null;
         speakLocally(text);
         return;
       }
+      markLatency("tts_requested");
       assistantAudioPending = true;
       dc.send(JSON.stringify({
         type: "response.create",
@@ -267,12 +316,14 @@ let pc = null;
         return;
       }
       if (event.type === "output_audio_buffer.started") {
+        markLatency("tts_audio_started");
         assistantAudioPending = false;
         assistantAudioActive = true;
         $("voiceHint").textContent = "Speaking the backend question.";
         return;
       }
       if (event.type === "output_audio_buffer.stopped" || event.type === "output_audio_buffer.cleared") {
+        markLatency(event.type === "output_audio_buffer.stopped" ? "tts_audio_stopped" : "tts_audio_cleared");
         assistantAudioPending = false;
         assistantAudioActive = false;
         if (!isRecording) $("voiceHint").textContent = "Question playback is done. Listening will start automatically.";
@@ -280,6 +331,7 @@ let pc = null;
         return;
       }
       if (event.type === "input_audio_buffer.committed") {
+        markLatency("audio_committed");
         if (event.item_id) pendingTranscriptItemId = event.item_id;
         setVoiceStatus({ audio: "committed", note: "Waiting for OpenAI Realtime transcription." });
         return;
@@ -298,9 +350,11 @@ let pc = null;
       if (event.type === "conversation.item.input_audio_transcription.delta" && event.delta) {
         if (!isRecording && !awaitingTranscript) return;
         $("transcript").value = (($("transcript").value || "") + " " + (event.transcript || event.delta)).trim();
+        sendVoiceStream({ type: "transcript_delta", delta: event.delta, text: $("transcript").value });
       }
       if (event.type === "conversation.item.input_audio_transcription.completed") {
         const transcript = (event.transcript || "").trim();
+        markLatency("final_transcript_received", { chars: transcript.length });
         if (pendingTranscriptItemId && event.item_id && event.item_id !== pendingTranscriptItemId) {
           setVoiceStatus({
             transcription: "ignored",
@@ -389,6 +443,7 @@ let pc = null;
       if (options.ended) interviewActive = false;
       cancelAssistantAudio();
       if (dc) dc.close();
+      if (voiceStream) voiceStream.close();
       if (pc) pc.close();
       const remoteAudio = $("remoteAudio");
       if (remoteAudio.srcObject) {
@@ -411,7 +466,7 @@ let pc = null;
       autoSubmitting = false;
       answerStartedAt = null;
       lastAnswerDurationSeconds = null;
-      dc = null; pc = null; localStream = null; meterStream = null; micTrack = null;
+      dc = null; pc = null; voiceStream = null; localStream = null; meterStream = null; micTrack = null;
       $("voiceHint").textContent = options.ended ? "Interview ended. Voice disconnected." : "Voice provider disconnected.";
       updateControls();
       if (!options.keepStatus) setStatus(options.status || "Disconnected.");
@@ -444,6 +499,7 @@ let pc = null;
       currentQuestion = data.first_question.question_text;
       $("questionText").textContent = currentQuestion;
       setStatus({ interview: "started", voice: "connecting", session: data });
+      connectVoiceStream(data.session_id);
       await connectVoice(data.session_id, voiceConnectionId);
     };
 
@@ -571,7 +627,8 @@ let pc = null;
           mic_level_percent: lastMicPercent,
           note: "Hands-free mode is listening. Speak your answer; it will stop after silence."
         });
-      }, 500);
+        markLatency("listening_started");
+      }, 200);
     }
 
     function stopAnswer(options = {}) {
@@ -633,6 +690,14 @@ let pc = null;
           note: "This transcript is too long for the captured audio duration, so it was not submitted."
         });
       }
+      markLatency("final_transcript_submit", { via: voiceStream && voiceStream.readyState === WebSocket.OPEN ? "websocket" : "rest" });
+      if (sendVoiceStream({
+        type: "transcript_final",
+        transcript_text: transcript,
+        audio_duration_seconds: lastAnswerDurationSeconds
+      })) {
+        return;
+      }
       const response = await fetch(`/interviews/${sessionId}/voice/answer`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -642,8 +707,13 @@ let pc = null;
         })
       });
       const data = await response.json();
+      markLatency("backend_response_received", { via: "rest" });
       autoSubmitting = false;
       if (!response.ok) return setStatus(data);
+      applyVoiceTurnResult(data);
+    }
+
+    function applyVoiceTurnResult(data) {
       currentQuestion = data.next_question_text || "";
       $("questionText").textContent = currentQuestion || "Interview completed or no next question.";
       $("transcript").value = "";
@@ -652,6 +722,7 @@ let pc = null;
       pendingTranscriptItemId = null;
       setStatus(data);
       if (currentQuestion) {
+        markLatency("next_tts_starting");
         sendRealtimeSpeak(currentQuestion);
       } else if (data.state && data.state.status === "completed") {
         disconnectVoice({ ended: true, keepStatus: true });
