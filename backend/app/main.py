@@ -5,6 +5,9 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import interviews
+from app.core.logging import configure_logging
+
+configure_logging()
 
 app = FastAPI(title="AI Interviewer Engine")
 STATIC_DIR = Path(__file__).parent / "static"

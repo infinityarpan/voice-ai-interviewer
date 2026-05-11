@@ -36,6 +36,7 @@ _load_env_file(backend_env)
 
 
 class Settings(BaseModel):
+    log_level: str = "INFO"
     ai_provider: Literal["mock", "openai"] = "mock"
     openai_api_key: str | None = None
     openai_llm_model: str = "gpt-5.4-nano"
@@ -50,6 +51,7 @@ class Settings(BaseModel):
 @lru_cache
 def get_settings() -> Settings:
     return Settings(
+        log_level=os.getenv("LOG_LEVEL", "INFO"),
         ai_provider=_literal_env("AI_PROVIDER", {"mock", "openai"}, "mock"),
         openai_api_key=os.getenv("OPENAI_API_KEY"),
         openai_llm_model=os.getenv("OPENAI_LLM_MODEL", "gpt-5.4-nano"),

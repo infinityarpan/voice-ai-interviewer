@@ -2,6 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.ai.provider import strict_json_schema
+from app.core.config import Settings
 from app.schemas.interview import AnswerEvaluation, InterviewPlan
 from tests.utils import sample_plan
 
@@ -66,3 +67,7 @@ def test_openai_strict_schema_hardening_removes_defaults():
                 assert_no_default(item)
 
     assert_no_default(schema)
+
+
+def test_settings_include_log_level_default():
+    assert Settings().log_level == "INFO"
